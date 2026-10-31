@@ -857,17 +857,52 @@ class CycloneDXParser:
                                 vuln_info.set_value(
                                     "justification", vuln["analysis"]["justification"]
                                 )
-                        if "affects" in vuln:
-                            if "ref" in vuln["affects"][0]:
-                                vuln_info.set_value(
-                                    "bom_link", vuln["affects"][0]["ref"]
-                                )
-                            if "versions" in vuln["affects"][0]:
-                                if "version" in vuln["affects"][0]["versions"]:
-                                    vuln_info.set_release(
-                                        vuln["affects"][0]["versions"]["version"]
+                        if "affects" in vuln and len(vuln["affects"]) > 0:
+                            # A vulnerability may affect multiple components.
+                            # Record the fields common to all records so that
+                            # they can be applied to each affected component.
+                            base_record = dict(vuln_info.get_vulnerability())
+                            for affect in vuln["affects"]:
+                                # Identify the affected version(s) of this
+                                # affects entry. The CycloneDX specification
+                                # defines versions as a list of version
+                                # objects.
+                                releases = []
+                                if "versions" in affect:
+                                    if isinstance(affect["versions"], list):
+                                        for versions_entry in affect["versions"]:
+                                            if (
+                                                isinstance(versions_entry, dict)
+                                                and "version" in versions_entry
+                                            ):
+                                                releases.append(
+                                                    versions_entry["version"]
+                                                )
+                                    elif (
+                                        isinstance(affect["versions"], dict)
+                                        and "version" in affect["versions"]
+                                    ):
+                                        releases.append(affect["versions"]["version"])
+                                if len(releases) == 0:
+                                    releases = [None]
+                                for release in releases:
+                                    # Reset the record so that data from a
+                                    # previous affects entry is not inherited
+                                    vuln_info.initialise()
+                                    vuln_info.copy_vulnerability(base_record)
+                                    if "ref" in affect:
+                                        vuln_info.set_value("bom_link", affect["ref"])
+                                    if release is not None:
+                                        vuln_info.set_release(release)
+                                    # get_vulnerability returns the record
+                                    # itself, so store a copy
+                                    vulnerabilities.append(
+                                        dict(vuln_info.get_vulnerability())
                                     )
-                        vulnerabilities.append(vuln_info.get_vulnerability())
+                        else:
+                            # get_vulnerability returns the record
+                            # itself, so store a copy
+                            vulnerabilities.append(dict(vuln_info.get_vulnerability()))
                     if self.debug:
                         print(vulnerabilities)
                 if "services" in data:
